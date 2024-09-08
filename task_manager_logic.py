@@ -1,141 +1,84 @@
-import openpyxl
-from tkinter import messagebox
-import os
-
+from excel_handler import ExcelHandler  # Import the class responsible for handling Excel file operations
+from task_model import Task, Subtask  # Import the Task and Subtask models
+import threading  # Import threading for background saving operations
 
 class TaskManagerLogic:
     def __init__(self):
-        self.excel_file = "task_manager_data.xlsx"
-        self.main_tasks = []
-        self.subtasks = []
+        """
+        Initialize the TaskManagerLogic class.
+        This class manages the tasks and subtasks in memory and interacts with the ExcelHandler for data persistence.
+        """
+        self.excel_handler = ExcelHandler()  # Create an instance of ExcelHandler to manage Excel file I/O
+        self.tasks = []  # List to hold all tasks
+        self.subtasks = []  # List to hold all subtasks
+        self.load_data()  # Load existing tasks and subtasks from the Excel file
 
-        # Load tasks and subtasks from the Excel file on startup
-        self.load_from_excel()
+    def load_data(self):
+        """
+        Load tasks and subtasks from the Excel file using ExcelHandler.
+        This method initializes the task and subtask lists with data from the file.
+        """
+        self.tasks, self.subtasks = self.excel_handler.load_data()  # Load data from the Excel file
 
-    def load_from_excel(self):
-        """Loads tasks and subtasks from an Excel file."""
-        if not os.path.exists(self.excel_file):
-            # Create the Excel file if it doesn't exist
-            self.create_excel_file()
-
-        workbook = openpyxl.load_workbook(self.excel_file)
-
-        # Load main tasks from the "Main Tasks" sheet
-        main_task_sheet = workbook["Main Tasks"]
-        self.main_tasks = [
-            [cell.value for cell in row] for row in main_task_sheet.iter_rows(min_row=2)
-        ]
-
-        # Load subtasks from the "Subtasks" sheet
-        subtask_sheet = workbook["Subtasks"]
-        self.subtasks = [
-            [cell.value for cell in row] for row in subtask_sheet.iter_rows(min_row=2)
-        ]
-
-    def create_excel_file(self):
-        """Creates a new Excel file with the necessary sheets and headers."""
-        workbook = openpyxl.Workbook()
-
-        # Create the main task sheet with headers
-        main_task_sheet = workbook.active
-        main_task_sheet.title = "Main Tasks"
-        main_task_headers = ["Task ID", "Task Name", "Category", "Priority", "Start Date", "Due Date", "Status", "Progress", "Notes"]
-        main_task_sheet.append(main_task_headers)
-
-        # Create the subtask sheet with headers
-        subtask_sheet = workbook.create_sheet(title="Subtasks")
-        subtask_headers = ["Subtask ID", "Task ID", "Subtask Name", "Subtask Status", "Subtask Progress", "Subtask Due Date", "Subtask Completed Date"]
-        subtask_sheet.append(subtask_headers)
-
-        # Save the workbook
-        workbook.save(self.excel_file)
-
-    def save_to_excel(self):
-        """Saves tasks and subtasks to an Excel file."""
-        workbook = openpyxl.load_workbook(self.excel_file)
-
-        # Clear and re-populate the main task sheet
-        if "Main Tasks" in workbook.sheetnames:
-            main_task_sheet = workbook["Main Tasks"]
-            workbook.remove(main_task_sheet)
-        main_task_sheet = workbook.create_sheet(title="Main Tasks")
-
-        # Add headers to the main task sheet
-        main_task_headers = ["Task ID", "Task Name", "Category", "Priority", "Start Date", "Due Date", "Status", "Progress", "Notes"]
-        main_task_sheet.append(main_task_headers)
-
-        # Add task data to the main task sheet
-        for task in self.main_tasks:
-            main_task_sheet.append(task)
-
-        # Clear and re-populate the subtask sheet
-        if "Subtasks" in workbook.sheetnames:
-            subtask_sheet = workbook["Subtasks"]
-            workbook.remove(subtask_sheet)
-        subtask_sheet = workbook.create_sheet(title="Subtasks")
-
-        # Add headers to the subtask sheet
-        subtask_headers = ["Subtask ID", "Task ID", "Subtask Name", "Subtask Status", "Subtask Progress", "Subtask Due Date", "Subtask Completed Date"]
-        subtask_sheet.append(subtask_headers)
-
-        # Add subtask data to the subtask sheet
-        for subtask in self.subtasks:
-            subtask_sheet.append(subtask)
-
-        # Save the workbook
-        workbook.save(self.excel_file)
+    def save_data(self):
+        """
+        Save tasks and subtasks to the Excel file using ExcelHandler.
+        This method runs in a separate thread to avoid blocking the UI.
+        """
+        save_thread = threading.Thread(target=self.excel_handler.save_data, args=(self.tasks, self.subtasks))
+        save_thread.start()  # Start the saving process in the background
 
     def get_new_task_id(self):
-        """Generates a new unique Task ID."""
-        if not self.main_tasks:
-            return 1
-        return max(task[0] for task in self.main_tasks) + 1
+        """
+        Generate a new unique Task ID.
+        This method checks the highest Task ID in the current list of tasks and returns a new unique ID.
+        """
+        return max((task.task_id for task in self.tasks), default=0) + 1  # Generate the next Task ID
 
     def get_new_subtask_id(self):
-        """Generates a new unique Subtask ID."""
-        if not self.subtasks:
-            return 1
-        return max(subtask[0] for subtask in self.subtasks) + 1
+        """
+        Generate a new unique Subtask ID.
+        This method checks the highest Subtask ID in the current list of subtasks and returns a new unique ID.
+        """
+        return max((subtask.subtask_id for subtask in self.subtasks), default=0) + 1  # Generate the next Subtask ID
 
-    def add_task(self, task_data):
-        """Adds a task to the main tasks."""
-        task_id = self.get_new_task_id()  # Generate a unique Task ID
-        new_task = [
-            task_id,
-            task_data['task_name'],
-            task_data['category'],
-            task_data['priority'],
-            task_data['start_date'],
-            task_data['due_date'],
-            task_data['status'],
-            task_data['progress'],
-            task_data['notes']
-        ]
-        self.main_tasks.append(new_task)
-        self.save_to_excel()  # Save changes to Excel
+    def add_task(self, task_data: dict):
+        """
+        Add a new task to the task list.
+        This method creates a new Task object, appends it to the task list, and saves the updated list to the Excel file.
+        :param task_data: A dictionary containing the task attributes.
+        """
+        task_id = self.get_new_task_id()  # Generate a new Task ID
+        new_task = Task(task_id, **task_data)  # Create a new Task object with the provided data
+        self.tasks.append(new_task)  # Add the new task to the list
+        self.save_data()  # Save the updated task list to the Excel file
 
-    def delete_task(self, task_id):
-        """Deletes a task by ID."""
-        self.main_tasks = [task for task in self.main_tasks if task[0] != task_id]
-        self.subtasks = [subtask for subtask in self.subtasks if subtask[1] != task_id]  # Delete related subtasks
-        self.save_to_excel()  # Save changes to Excel
+    def add_subtask(self, subtask_data: dict):
+        """
+        Add a new subtask to the subtask list.
+        This method creates a new Subtask object, appends it to the subtask list, and saves the updated list to the Excel file.
+        :param subtask_data: A dictionary containing the subtask attributes.
+        """
+        subtask_id = self.get_new_subtask_id()  # Generate a new Subtask ID
+        new_subtask = Subtask(subtask_id, **subtask_data)  # Create a new Subtask object with the provided data
+        self.subtasks.append(new_subtask)  # Add the new subtask to the list
+        self.save_data()  # Save the updated subtask list to the Excel file
 
-    def delete_subtask(self, subtask_id):
-        """Deletes a subtask by ID."""
-        self.subtasks = [subtask for subtask in self.subtasks if subtask[0] != subtask_id]
-        self.save_to_excel()  # Save changes to Excel
+    def delete_task(self, task_id: int):
+        """
+        Delete a task and its associated subtasks.
+        This method removes a task by its ID and also removes any subtasks associated with that task.
+        :param task_id: The ID of the task to be deleted.
+        """
+        self.tasks = [task for task in self.tasks if task.task_id != task_id]  # Filter out the task with the given ID
+        self.subtasks = [subtask for subtask in self.subtasks if subtask.task_id != task_id]  # Remove associated subtasks
+        self.save_data()  # Save the updated task and subtask lists to the Excel file
 
-    def add_subtask(self, subtask_data):
-        """Adds a subtask to the subtask list."""
-        subtask_id = self.get_new_subtask_id()  # Generate a unique Subtask ID
-        new_subtask = [
-            subtask_id,
-            subtask_data['task_id'],
-            subtask_data['subtask_name'],
-            subtask_data['subtask_status'],
-            subtask_data['subtask_progress'],
-            subtask_data['subtask_due_date'],
-            subtask_data['subtask_completed_date']
-        ]
-        self.subtasks.append(new_subtask)
-        self.save_to_excel()  # Save changes to Excel
+    def delete_subtask(self, subtask_id: int):
+        """
+        Delete a subtask by its ID.
+        This method removes a subtask from the subtask list based on its ID.
+        :param subtask_id: The ID of the subtask to be deleted.
+        """
+        self.subtasks = [subtask for subtask in self.subtasks if subtask.subtask_id != subtask_id]  # Filter out the subtask
+        self.save_data()  # Save the updated subtask list to the Excel file
